@@ -37,3 +37,15 @@ async def create_tables():
     """Create all tables on startup (for development). Use Alembic in production."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Hot-migrate DB columns and enums
+        from sqlalchemy import text
+        try:
+            await conn.execute(text("ALTER TYPE attendancestatus ADD VALUE IF NOT EXISTS 'leave';"))
+        except Exception:
+            pass
+            
+        try:
+            await conn.execute(text("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS class_id INTEGER REFERENCES classes(id);"))
+        except Exception:
+            pass

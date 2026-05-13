@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from typing import Optional, List
 import json
 import io
 import logging
@@ -15,9 +16,10 @@ from app.schemas.schemas import (
     StartSessionRequest, SessionOut, AttendanceOut,
     FaceMarkResult, MarkAttendanceManual
 )
-from app.services.jwt_service import get_current_user, require_teacher
+from app.services.jwt_service import get_current_user, require_teacher, require_student
 from app.services.face_service import extract_embedding, match_face, detect_all_faces
 from app.services.report_service import generate_csv, generate_excel, generate_pdf
+from app.config import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -329,6 +331,9 @@ async def session_report(
     )
     students = all_students.scalars().all()
 
+    # Run lazy auto-fill of absents if past 10:00 AM
+    await auto_fill_absents_for_session(db, session)
+
     # Attendance records
     att_result = await db.execute(
         select(Attendance).where(Attendance.session_id == session_id)
@@ -440,3 +445,259 @@ async def export_session(
             media_type="application/pdf",
             headers={"Content-Disposition": f"attachment; filename=session_{session_id}.pdf"},
         )
+
+
+# ─── Self Marking & Tracking Helpers ──────────────────────────────────────────
+
+def get_local_now() -> datetime:
+    return datetime.utcnow() + timedelta(hours=settings.TIMEZONE_OFFSET_HOURS)
+
+
+async def get_or_create_daily_session(db: AsyncSession, class_id: int) -> AttendanceSession:
+    local_now = get_local_now()
+    today_date = local_now.date()
+    
+    result = await db.execute(
+        select(AttendanceSession).where(
+            AttendanceSession.class_id == class_id,
+            AttendanceSession.subject_id == None,
+            AttendanceSession.teacher_id == None,
+            func.date(AttendanceSession.date) == today_date
+        )
+    )
+    session = result.scalar_one_or_none()
+    
+    if not session:
+        session = AttendanceSession(
+            class_id=class_id,
+            teacher_id=None,
+            subject_id=None,
+            date=datetime.utcnow(),
+            is_active=True
+        )
+        db.add(session)
+        await db.flush()
+        
+    return session
+
+
+async def auto_fill_absents_for_session(db: AsyncSession, session: AttendanceSession):
+    local_now = get_local_now()
+    if local_now.hour >= 10:
+        students_result = await db.execute(
+            select(Student).where(Student.class_id == session.class_id)
+        )
+        students = students_result.scalars().all()
+        
+        att_result = await db.execute(
+            select(Attendance).where(Attendance.session_id == session.id)
+        )
+        existing_student_ids = {a.student_id for a in att_result.scalars().all()}
+        
+        for student in students:
+            if student.id not in existing_student_ids:
+                absent_record = Attendance(
+                    student_id=student.id,
+                    session_id=session.id,
+                    status=AttendanceStatus.absent,
+                    confidence=0.0,
+                    marked_manually=False
+                )
+                db.add(absent_record)
+        await db.commit()
+
+
+# ─── Student Self-Marking ─────────────────────────────────────────────────────
+
+@router.post("/student-self-mark")
+async def student_self_mark(
+    status: AttendanceStatus = Form(...),
+    file: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_student)
+):
+    """
+    Student self-marks attendance daily between 9:00 AM and 10:00 AM local time.
+    Present requires face photo verification.
+    Leave and Absent do not require photo.
+    """
+    if user.get("role") != "student":
+        raise HTTPException(status_code=403, detail="Only students can self-mark attendance.")
+
+    student_res = await db.execute(
+        select(Student).where(Student.user_id == int(user["sub"]))
+    )
+    student = student_res.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student profile not found.")
+    
+    if not student.class_id:
+        raise HTTPException(status_code=400, detail="You are not assigned to any class.")
+
+    local_now = get_local_now()
+    # Enforce strict 9:00 AM - 10:00 AM window
+    if local_now.hour != 9:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Attendance window is closed. It is only open from 09:00 AM to 10:00 AM. Current local time is {local_now.strftime('%H:%M:%S')}."
+        )
+
+    session = await get_or_create_daily_session(db, student.class_id)
+
+    # Check if they have already marked attendance
+    existing_att = await db.execute(
+        select(Attendance).where(
+            Attendance.student_id == student.id,
+            Attendance.session_id == session.id
+        )
+    )
+    if existing_att.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="You have already marked your attendance for today.")
+
+    confidence = None
+
+    if status == AttendanceStatus.present:
+        if not file:
+            raise HTTPException(status_code=400, detail="Face photo is required to mark attendance as present.")
+
+        image_bytes = await file.read()
+        probe_embedding = extract_embedding(image_bytes)
+        if not probe_embedding:
+            raise HTTPException(status_code=400, detail="Could not detect face in the uploaded photo.")
+
+        if not student.face_registered or not student.face_embedding:
+            raise HTTPException(status_code=400, detail="Your face is not registered. Contact your teacher to register your face.")
+
+        stored_records = [{
+            "id": student.id,
+            "embedding": student.face_embedding,
+            "student_id": student.id,
+            "roll_number": student.roll_number,
+            "full_name": user.get("full_name")
+        }]
+        match = match_face(probe_embedding, stored_records)
+        if not match:
+            raise HTTPException(status_code=400, detail="Face recognition verification failed.")
+
+        confidence = match["confidence"]
+
+    new_record = Attendance(
+        student_id=student.id,
+        session_id=session.id,
+        status=status,
+        confidence=confidence,
+        timestamp=datetime.utcnow(),
+        marked_manually=False
+    )
+    db.add(new_record)
+    await db.commit()
+
+    return {
+        "message": f"Successfully marked attendance as {status}",
+        "student_id": student.id,
+        "status": status,
+        "confidence": confidence
+    }
+
+
+# ─── Teacher Student Tracking ─────────────────────────────────────────────────
+
+@router.get("/teacher/track-students")
+async def teacher_track_students(
+    class_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_teacher)
+):
+    """
+    Teacher tracks student attendance logs, overall percentages, leaves, and absences.
+    Teachers are default-restricted to their own assigned class.
+    """
+    from app.models.models import Teacher
+    
+    if user.get("role") == "teacher":
+        teacher_res = await db.execute(
+            select(Teacher).where(Teacher.user_id == int(user["sub"]))
+        )
+        teacher = teacher_res.scalar_one_or_none()
+        if not teacher:
+            raise HTTPException(status_code=404, detail="Teacher profile not found.")
+        
+        if class_id is None:
+            class_id = teacher.class_id
+            
+        if class_id is None:
+            raise HTTPException(status_code=400, detail="You do not have any assigned class. Please contact Admin.")
+            
+        if teacher.class_id is not None and class_id != teacher.class_id:
+            raise HTTPException(status_code=403, detail="Access denied. Teachers can only track their assigned class.")
+
+    if not class_id:
+        raise HTTPException(status_code=400, detail="class_id query parameter is required.")
+
+    # Lazy auto-fill absents for today's daily session
+    local_now = get_local_now()
+    today_date = local_now.date()
+    daily_session_res = await db.execute(
+        select(AttendanceSession).where(
+            AttendanceSession.class_id == class_id,
+            AttendanceSession.subject_id == None,
+            AttendanceSession.teacher_id == None,
+            func.date(AttendanceSession.date) == today_date
+        )
+    )
+    daily_session = daily_session_res.scalar_one_or_none()
+    if daily_session:
+        await auto_fill_absents_for_session(db, daily_session)
+
+    students_res = await db.execute(
+        select(Student).where(Student.class_id == class_id)
+    )
+    students = students_res.scalars().all()
+
+    tracking_list = []
+    for s in students:
+        u_res = await db.execute(select(User).where(User.id == s.user_id))
+        u = u_res.scalar_one_or_none()
+        
+        total = (await db.execute(
+            select(func.count()).select_from(Attendance).where(Attendance.student_id == s.id)
+        )).scalar()
+        
+        present = (await db.execute(
+            select(func.count()).select_from(Attendance).where(
+                Attendance.student_id == s.id,
+                Attendance.status == "present"
+            )
+        )).scalar()
+        
+        absent = (await db.execute(
+            select(func.count()).select_from(Attendance).where(
+                Attendance.student_id == s.id,
+                Attendance.status == "absent"
+            )
+        )).scalar()
+        
+        leave = (await db.execute(
+            select(func.count()).select_from(Attendance).where(
+                Attendance.student_id == s.id,
+                Attendance.status == "leave"
+            )
+        )).scalar()
+
+        pct = round((present / total * 100) if total else 0.0, 2)
+
+        tracking_list.append({
+            "student_id": s.id,
+            "roll_number": s.roll_number,
+            "full_name": u.full_name if u else "Unknown",
+            "email": u.email if u else "Unknown",
+            "phone": s.phone,
+            "total_records": total,
+            "present_count": present,
+            "absent_count": absent,
+            "leave_count": leave,
+            "attendance_percentage": pct
+        })
+
+    return tracking_list
+

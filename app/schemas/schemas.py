@@ -123,12 +123,14 @@ class TeacherCreate(BaseModel):
     full_name: str
     employee_id: Optional[str] = None
     phone: Optional[str] = None
+    class_id: Optional[int] = None
 
 
 class TeacherOut(BaseModel):
     id: int
     employee_id: Optional[str]
     phone: Optional[str]
+    class_id: Optional[int] = None
     user: UserOut
 
     model_config = {"from_attributes": True}

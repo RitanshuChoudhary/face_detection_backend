@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     FACE_MATCH_THRESHOLD: float = 0.5
     MAX_FACE_IMAGES: int = 20
+    TIMEZONE_OFFSET_HOURS: float = 5.5  # Default to IST (UTC+5:30)
 
     class Config:
         env_file = ".env"

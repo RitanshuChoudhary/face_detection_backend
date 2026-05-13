@@ -18,6 +18,7 @@ class AttendanceStatus(str, enum.Enum):
     present = "present"
     absent = "absent"
     late = "late"
+    leave = "leave"
 
 
 class User(Base):
@@ -61,10 +62,12 @@ class Teacher(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True)
     employee_id = Column(String(50), unique=True, nullable=True)
     phone = Column(String(20), nullable=True)
+    class_id = Column(Integer, ForeignKey("classes.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="teacher")
     sessions = relationship("AttendanceSession", back_populates="teacher")
+    class_ = relationship("Class", back_populates="teachers")
 
 
 class Class(Base):
@@ -78,6 +81,7 @@ class Class(Base):
     students = relationship("Student", back_populates="class_")
     sessions = relationship("AttendanceSession", back_populates="class_")
     class_subjects = relationship("ClassSubject", back_populates="class_")
+    teachers = relationship("Teacher", back_populates="class_")
 
 
 class Subject(Base):

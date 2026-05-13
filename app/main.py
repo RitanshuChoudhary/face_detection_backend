@@ -25,6 +25,17 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Face Track API...")
     await create_tables()
     logger.info("Database tables ready")
+
+    # Auto-seed classes 1-10 on startup
+    try:
+        from app.database import AsyncSessionLocal
+        from app.routers.admin import seed_classes_1_to_10
+        async with AsyncSessionLocal() as db:
+            await seed_classes_1_to_10(db)
+        logger.info("Default Classes 1-10 seeded successfully")
+    except Exception as e:
+        logger.warning(f"Failed to seed default classes on startup: {e}")
+
     # Pre-load face model on startup to avoid cold start on first request
     try:
         from app.services.face_service import get_face_app

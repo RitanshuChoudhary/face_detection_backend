@@ -63,6 +63,11 @@ async def create_teacher(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    if data.class_id:
+        class_check = await db.execute(select(Class).where(Class.id == data.class_id))
+        if not class_check.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Assigned Class ID does not exist")
+
     db_user = User(
         email=data.email,
         password_hash=pwd_context.hash(data.password),
@@ -76,6 +81,7 @@ async def create_teacher(
         user_id=db_user.id,
         employee_id=data.employee_id,
         phone=data.phone,
+        class_id=data.class_id,
     )
     db.add(teacher)
     await db.commit()
@@ -172,7 +178,118 @@ async def list_subjects(
     return result.scalars().all()
 
 
+# ─── Tracking ─────────────────────────────────────────────────────────────────
+
+@router.get("/tracking/teachers")
+async def track_teachers(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_admin),
+):
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(Teacher)
+        .options(selectinload(Teacher.user), selectinload(Teacher.class_))
+    )
+    teachers = result.scalars().all()
+    
+    tracking_data = []
+    for t in teachers:
+        sessions_count = (await db.execute(
+            select(func.count()).select_from(AttendanceSession).where(AttendanceSession.teacher_id == t.id)
+        )).scalar()
+        
+        tracking_data.append({
+            "teacher_id": t.id,
+            "employee_id": t.employee_id,
+            "phone": t.phone,
+            "class_id": t.class_id,
+            "class_name": t.class_.class_name if t.class_ else None,
+            "section": t.class_.section if t.class_ else None,
+            "user_id": t.user.id if t.user else None,
+            "email": t.user.email if t.user else None,
+            "full_name": t.user.full_name if t.user else None,
+            "is_active": t.user.is_active if t.user else False,
+            "sessions_conducted": sessions_count
+        })
+    return tracking_data
+
+
+@router.get("/tracking/classes")
+async def track_classes(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_admin),
+):
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(Class)
+        .options(selectinload(Class.teachers))
+    )
+    classes = result.scalars().all()
+    
+    tracking_data = []
+    today = datetime.utcnow().date()
+    for c in classes:
+        student_count = (await db.execute(
+            select(func.count()).select_from(Student).where(Student.class_id == c.id)
+        )).scalar()
+        
+        assigned_teachers = []
+        for t in c.teachers:
+            user_res = await db.execute(select(User).where(User.id == t.user_id))
+            u = user_res.scalar_one_or_none()
+            if u:
+                assigned_teachers.append({
+                    "teacher_id": t.id,
+                    "full_name": u.full_name,
+                    "email": u.email
+                })
+                
+        sessions_today_res = await db.execute(
+            select(AttendanceSession.id).where(
+                AttendanceSession.class_id == c.id,
+                func.date(AttendanceSession.date) == today
+            )
+        )
+        session_ids = [s[0] for s in sessions_today_res.all()]
+        
+        today_attendance_pct = 0.0
+        if session_ids:
+            total_records = (await db.execute(
+                select(func.count()).select_from(Attendance).where(Attendance.session_id.in_(session_ids))
+            )).scalar()
+            
+            present_records = (await db.execute(
+                select(func.count()).select_from(Attendance).where(
+                    Attendance.session_id.in_(session_ids),
+                    Attendance.status == "present"
+                )
+            )).scalar()
+            
+            if total_records > 0:
+                today_attendance_pct = round((present_records / total_records) * 100, 2)
+        
+        tracking_data.append({
+            "class_id": c.id,
+            "class_name": c.class_name,
+            "section": c.section,
+            "student_count": student_count,
+            "teachers": assigned_teachers,
+            "today_attendance_percentage": today_attendance_pct
+        })
+    return tracking_data
+
+
 # ─── Seed data ───────────────────────────────────────────────────────────────
+
+async def seed_classes_1_to_10(db: AsyncSession):
+    for i in range(1, 11):
+        class_name = f"Class {i}"
+        result = await db.execute(select(Class).where(Class.class_name == class_name))
+        if not result.scalar_one_or_none():
+            cls = Class(class_name=class_name, section="A")
+            db.add(cls)
+    await db.commit()
+
 
 @router.post("/seed", status_code=201)
 async def seed_data(db: AsyncSession = Depends(get_db)):
@@ -191,11 +308,8 @@ async def seed_data(db: AsyncSession = Depends(get_db)):
         )
         db.add(admin)
 
-    # Create sample class
-    cls_result = await db.execute(select(Class).where(Class.class_name == "Class 10"))
-    if not cls_result.scalar_one_or_none():
-        cls = Class(class_name="Class 10", section="A")
-        db.add(cls)
+    # Seed Classes 1 to 10
+    await seed_classes_1_to_10(db)
 
     # Create sample subject
     sub_result = await db.execute(select(Subject).where(Subject.subject_name == "Mathematics"))

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from passlib.context import CryptContext
+from typing import Optional, List
 import json
 import logging
 
@@ -22,9 +23,9 @@ logger = logging.getLogger(__name__)
 async def create_student(
     data: StudentCreate,
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_admin),
+    user=Depends(require_teacher),
 ):
-    """Admin creates a student account."""
+    """Teacher or Admin creates a student account."""
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -52,6 +53,85 @@ async def create_student(
     await db.commit()
     await db.refresh(student)
     return {"message": "Student created", "student_id": student.id, "user_id": db_user.id}
+
+
+@router.post("/register-with-face", status_code=201)
+async def register_student_with_face(
+    email: str = Form(...),
+    password: str = Form(...),
+    full_name: str = Form(...),
+    roll_number: str = Form(...),
+    class_id: int = Form(...),
+    phone: Optional[str] = Form(None),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_teacher),
+):
+    """
+    Teacher or Admin registers a student with their class and face photo in a single request.
+    Validates that a valid face exists in the photo (name == face validation)
+    """
+    if not full_name.strip():
+        raise HTTPException(status_code=400, detail="Student full name cannot be empty")
+
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    roll_check = await db.execute(select(Student).where(Student.roll_number == roll_number))
+    if roll_check.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Roll number already exists")
+
+    # Read image bytes and validate face
+    image_bytes = await file.read()
+    embedding = extract_embedding(image_bytes)
+    if embedding is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No face detected in the photo. Please ensure face is clearly visible."
+        )
+
+    # Create user account
+    db_user = User(
+        email=email,
+        password_hash=pwd_context.hash(password),
+        full_name=full_name,
+        role=RoleEnum.student,
+    )
+    db.add(db_user)
+    await db.flush()
+
+    # Create student profile
+    student = Student(
+        user_id=db_user.id,
+        roll_number=roll_number,
+        class_id=class_id,
+        phone=phone,
+        face_embedding=json.dumps(embedding),
+        face_registered=True,
+    )
+    db.add(student)
+    await db.flush()
+
+    # Upload to Cloudinary if configured
+    preview_url = ""
+    if settings.CLOUDINARY_CLOUD_NAME:
+        try:
+            preview_url = upload_face_image(image_bytes, student.id, 0)
+            student.face_image_url = preview_url
+        except Exception as e:
+            logger.warning(f"Failed to upload to Cloudinary: {e}")
+
+    await db.commit()
+    await db.refresh(student)
+
+    return {
+        "message": "Student registered successfully with face data",
+        "student_id": student.id,
+        "user_id": db_user.id,
+        "face_registered": True,
+        "face_image_url": student.face_image_url
+    }
 
 
 @router.get("/", response_model=list[StudentOut])
