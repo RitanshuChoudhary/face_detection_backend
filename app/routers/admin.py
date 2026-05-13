@@ -93,7 +93,8 @@ async def list_teachers(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_admin),
 ):
-    result = await db.execute(select(Teacher))
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(select(Teacher).options(selectinload(Teacher.user)))
     return result.scalars().all()
 
 

@@ -141,7 +141,8 @@ async def list_students(
     user=Depends(require_teacher),
 ):
     """List all students. Optionally filter by class."""
-    query = select(Student)
+    from sqlalchemy.orm import selectinload
+    query = select(Student).options(selectinload(Student.user))
     if class_id:
         query = query.where(Student.class_id == class_id)
     result = await db.execute(query)
@@ -154,7 +155,12 @@ async def get_student(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_teacher),
 ):
-    result = await db.execute(select(Student).where(Student.id == student_id))
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(Student)
+        .options(selectinload(Student.user))
+        .where(Student.id == student_id)
+    )
     student = result.scalar_one_or_none()
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
