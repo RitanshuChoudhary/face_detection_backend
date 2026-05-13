@@ -1,1 +1,1 @@
-from app.routers import auth, students, attendance, admin
+from app.routers import auth, students, attendance, admin, monitoring
