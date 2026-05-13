@@ -1,0 +1,17 @@
+# Environments
+.env
+.venv
+venv
+ENV
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
