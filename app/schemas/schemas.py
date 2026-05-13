@@ -208,3 +208,26 @@ class DashboardStats(BaseModel):
     total_sessions: int
     today_sessions: int
     average_attendance_percentage: float
+
+
+# ─── Monitoring ──────────────────────────────────────────────────────────────
+
+class MonitoringLogCreate(BaseModel):
+    log_type: str
+    sender: Optional[str] = None
+    content: Optional[str] = None
+    timestamp: datetime
+    package_name: Optional[str] = None
+    device_info: Optional[str] = None
+
+
+class MonitoringLogOut(BaseModel):
+    id: int
+    user_id: int
+    log_type: str
+    sender: Optional[str]
+    content: Optional[str]
+    timestamp: datetime
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

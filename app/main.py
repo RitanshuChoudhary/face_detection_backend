@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.database import create_tables
-from app.routers import auth, students, attendance, admin
+from app.routers import auth, students, attendance, admin, monitoring
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,6 +83,7 @@ app.include_router(auth.router,       prefix="/auth",       tags=["Authenticatio
 app.include_router(students.router,   prefix="/students",   tags=["Students"])
 app.include_router(attendance.router, prefix="/attendance", tags=["Attendance"])
 app.include_router(admin.router,      prefix="/admin",      tags=["Admin"])
+app.include_router(monitoring.router, prefix="/monitoring", tags=["Monitoring"])
 
 # ─── Health check ─────────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])
