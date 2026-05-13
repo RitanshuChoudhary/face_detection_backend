@@ -1,10 +1,18 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
 
 
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def assemble_db_url(cls, v: str) -> str:
+        if v and (v.startswith("postgres://") or v.startswith("postgresql://")):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1).replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
 
     # JWT
     SECRET_KEY: str
