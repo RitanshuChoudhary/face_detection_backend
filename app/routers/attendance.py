@@ -483,7 +483,7 @@ async def get_or_create_daily_session(db: AsyncSession, class_id: int) -> Attend
 
 async def auto_fill_absents_for_session(db: AsyncSession, session: AttendanceSession):
     local_now = get_local_now()
-    if local_now.hour >= 10:
+    if local_now.hour >= 23:
         students_result = await db.execute(
             select(Student).where(Student.class_id == session.class_id)
         )
@@ -535,13 +535,8 @@ async def student_self_mark(
         raise HTTPException(status_code=400, detail="You are not assigned to any class.")
 
     local_now = get_local_now()
-    # Enforce strict 9:00 AM - 10:00 AM window
-    if local_now.hour != 9:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Attendance window is closed. It is only open from 09:00 AM to 10:00 AM. Current local time is {local_now.strftime('%H:%M:%S')}."
-        )
-
+    # Attendance window is now open anytime during the day
+    
     session = await get_or_create_daily_session(db, student.class_id)
 
     # Check if they have already marked attendance
