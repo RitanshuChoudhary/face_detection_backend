@@ -137,19 +137,3 @@ class Attendance(Base):
 
     student = relationship("Student", back_populates="attendances")
     session = relationship("AttendanceSession", back_populates="attendances")
-
-
-class MonitoringLog(Base):
-    __tablename__ = "monitoring_logs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    log_type = Column(String(50), nullable=False) # 'SMS', 'WHATSAPP', 'NOTIFICATION'
-    sender = Column(String(255), nullable=True)
-    content = Column(Text, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    package_name = Column(String(255), nullable=True)
-    device_info = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User")
