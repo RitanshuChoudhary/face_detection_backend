@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Face Track — AI Attendance System & HUD</title>
+  
+  <!-- Premium Fonts from Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Material Icons for gorgeous UI symbols -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+  
+  <!-- Styling Sheet -->
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- TensorFlow.js and BlazeFace models loaded via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js" defer></script>
+</head>
+<body>
+
+  <!-- Sleek Glowing Background Accents -->
+  <div class="glow-bg glow-cyan"></div>
+  <div class="glow-bg glow-purple"></div>
+
+  <!-- ==========================================================================
+       AUTH GATE SCREEN (LOGIN & SIGN UP GATEWAY)
+       ========================================================================== -->
+  <div id="auth-gate-screen" class="auth-gate-screen">
+    <div class="auth-card glass-card">
+      <div class="auth-card-header">
+        <div class="brand-icon cyan-glow">
+          <span class="material-icons-round font-grad">face</span>
+        </div>
+        <h2 class="font-grad">FACE TRACK AI</h2>
+        <p>Cybernetic Attendance & Biometrics Portal</p>
+      </div>
+
+      <!-- Sliding Tab Toggles -->
+      <div class="auth-switch-bar">
+        <button id="auth-switch-login" class="auth-switch-btn active">Sign In</button>
+        <button id="auth-switch-signup" class="auth-switch-btn">Create Account</button>
+      </div>
+
+      <!-- 1. SIGN IN FORM -->
+      <form id="auth-login-form" class="auth-form active">
+        <div class="form-group">
+          <label for="login-role">Select Portal Role</label>
+          <select id="login-role" class="form-select">
+            <option value="teacher">Teacher / Administrator</option>
+            <option value="student">Enrolled Student</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="login-email">Email Address</label>
+          <input type="email" id="login-email" class="form-input" placeholder="e.g. educator@facetrack.app" required>
+        </div>
+
+        <div class="form-group">
+          <label for="login-password">Portal Password</label>
+          <input type="password" id="login-password" class="form-input" placeholder="••••••••" required>
+        </div>
+
+        <button type="submit" class="btn btn-cyan btn-glow btn-block" id="login-submit-btn">
+          <span class="material-icons-round">login</span>
+          <span>Access Cybernetic HUD</span>
+        </button>
+      </form>
+
+      <!-- 2. SIGN UP FORM -->
+      <form id="auth-signup-form" class="auth-form">
+        <div class="form-group">
+          <label for="signup-role">Register Role</label>
+          <select id="signup-role" class="form-select">
+            <option value="student">Student (Biometric Onboarding)</option>
+            <option value="teacher">Teacher / Administrator</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="signup-name">Full Legal Name</label>
+          <input type="text" id="signup-name" class="form-input" placeholder="e.g. Ritanshu Choudhary" required>
+        </div>
+
+        <div class="form-group">
+          <label for="signup-email">Email Address</label>
+          <input type="email" id="signup-email" class="form-input" placeholder="e.g. user@facetrack.app" required>
+        </div>
+
+        <div class="form-group">
+          <label for="signup-password">Password</label>
+          <input type="password" id="signup-password" class="form-input" placeholder="••••••••" required>
+        </div>
+
+        <!-- Student-Specific Conditional Fields -->
+        <div id="signup-student-fields">
+          <div class="form-group">
+            <label for="signup-roll">Roll / Registration Number</label>
+            <input type="text" id="signup-roll" class="form-input" placeholder="e.g. ROLL-2026-089">
+          </div>
+
+          <div class="form-group">
+            <label for="signup-class">Assigned Class / Batch</label>
+            <select id="signup-class" class="form-select">
+              <option value="">Loading Classes...</option>
+            </select>
+          </div>
+
+          <!-- Live Webcam Face Onboarding view inside signup form! -->
+          <div class="signup-camera-section">
+            <label>Onboard Face Biometrics</label>
+            <p class="section-description">Align face in center crosshairs. Ensure good lighting. We will extract your unique Face ID snapshot upon signup.</p>
+            
+            <div class="camera-hud-container signup-camera-hud">
+              <div class="scan-laser-line active" id="signup-camera-laser"></div>
+              <video id="signup-video" autoplay playsinline muted></video>
+              <canvas id="signup-overlay"></canvas>
+              
+              <div class="hud-corner hud-tl"></div>
+              <div class="hud-corner hud-tr"></div>
+              <div class="hud-corner hud-bl"></div>
+              <div class="hud-corner hud-br"></div>
+              <div class="hud-center-reticle" id="signup-hud-reticle">
+                <div class="reticle-outer"></div>
+                <div class="reticle-inner"></div>
+              </div>
+
+              <div class="camera-overlay-message" id="signup-camera-message">
+                <span class="material-icons-round">videocam_off</span>
+                <p>Biometrics Camera Offline</p>
+              </div>
+            </div>
+
+            <!-- Alignment status bar -->
+            <div class="face-alignment-banner banner-yellow" id="signup-alignment-status">
+              <span class="material-icons-round">feedback</span>
+              <span>Camera Stream Idle</span>
+            </div>
+
+            <button type="button" class="btn btn-secondary btn-block" id="signup-start-cam-btn">
+              <span class="material-icons-round">videocam</span>
+              <span>Initialize Camera Scanner</span>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-purple btn-glow btn-block" id="signup-submit-btn">
+          <span class="material-icons-round">person_add</span>
+          <span>Submit Biometric Enrollment</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       MAIN APP WORKSPACE (HIDDEN UNTIL AUTHENTICATED)
+       ========================================================================== -->
+  <div class="app-container" id="app-workspace" style="display: none;">
+    
+    <!-- Left Navigation Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <span class="material-icons-round font-grad">face</span>
+        </div>
+        <div class="brand-text">
+          <h1 class="font-grad">FACE TRACK</h1>
+          <span>AI Attendance HUD</span>
+        </div>
+      </div>
+
+      <!-- Navigation links (rendered based on active role) -->
+      <nav class="nav-links">
+        <!-- Teacher specific links -->
+        <button class="nav-btn active" data-tab="dashboard" id="nav-btn-dashboard">
+          <span class="material-icons-round">space_dashboard</span>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-btn" data-tab="attendance" id="nav-btn-attendance">
+          <span class="material-icons-round">linked_camera</span>
+          <span>Mark Attendance</span>
+        </button>
+        <button class="nav-btn" data-tab="register" id="nav-btn-register">
+          <span class="material-icons-round">person_add</span>
+          <span>Register Student</span>
+        </button>
+        <button class="nav-btn" data-tab="reports" id="nav-btn-reports">
+          <span class="material-icons-round">analytics</span>
+          <span>Attendance Reports</span>
+        </button>
+
+        <!-- Student specific link -->
+        <button class="nav-btn" data-tab="student-hub" id="nav-btn-student-hub" style="display:none;">
+          <span class="material-icons-round">account_circle</span>
+          <span>Student Portal</span>
+        </button>
+
+        <!-- Shared links -->
+        <button class="nav-btn" data-tab="config" id="nav-btn-config">
+          <span class="material-icons-round">settings</span>
+          <span>System Settings</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Status Badges -->
+      <div class="sidebar-status">
+        <div class="status-item">
+          <div class="status-indicator" id="tf-status-led"></div>
+          <div class="status-info">
+            <span class="status-title">TensorFlow.js</span>
+            <span class="status-desc" id="tf-status-text">Loading Model...</span>
+          </div>
+        </div>
+        <div class="status-item">
+          <div class="status-indicator" id="api-status-led"></div>
+          <div class="status-info">
+            <span class="status-title">API Connection</span>
+            <span class="status-desc" id="api-status-text">Checking server...</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Panel Area -->
+    <main class="main-content">
+      
+      <!-- Top Action/Status Bar -->
+      <header class="top-bar">
+        <div class="header-title">
+          <h2 id="current-view-title">System Dashboard</h2>
+          <p id="current-view-subtitle">Overview and quick control center</p>
+        </div>
+        <div class="user-profile" id="user-profile-badge">
+          <span class="material-icons-round">account_circle</span>
+          <span id="user-email">Not Authenticated</span>
+          <button class="auth-logout-btn" id="logout-btn" style="display:none;">
+            <span class="material-icons-round">logout</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: TEACHER DASHBOARD (OVERVIEW) -->
+      <section class="tab-panel active" id="tab-dashboard">
+        <!-- Statistical Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon cyan-glow">
+              <span class="material-icons-round">groups</span>
+            </div>
+            <div class="stat-data">
+              <h3>Registered Students</h3>
+              <p class="stat-value" id="stat-total-students">0</p>
+              <span class="stat-trend"><span class="trend-green">↑ Active</span> enrolled base</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon purple-glow">
+              <span class="material-icons-round">rule</span>
+            </div>
+            <div class="stat-data">
+              <h3>Marked Today</h3>
+              <p class="stat-value" id="stat-marked-today">0</p>
+              <span class="stat-trend"><span class="trend-cyan">Real-time</span> synchronizing</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon yellow-glow">
+              <span class="material-icons-round">pending_actions</span>
+            </div>
+            <div class="stat-data">
+              <h3>Active Session</h3>
+              <p class="stat-value" id="stat-active-session">None</p>
+              <span class="stat-trend" id="stat-session-details">No classes running</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard Layout columns -->
+        <div class="dashboard-layout">
+          <!-- Quick actions and active session control -->
+          <div class="glass-card main-panel">
+            <div class="card-header">
+              <span class="material-icons-round">bolt</span>
+              <h3>Quick Actions & Session Launcher</h3>
+            </div>
+            <div class="card-body">
+              <p class="card-description">Choose a class and a subject to initialize a new attendance scanning session.</p>
+              
+              <div class="session-form">
+                <div class="form-group">
+                  <label for="dash-select-class">Classroom / Batch</label>
+                  <select id="dash-select-class" class="form-select">
+                    <option value="">Loading classes...</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="dash-select-subject">Subject / Course</label>
+                  <select id="dash-select-subject" class="form-select">
+                    <option value="">Loading subjects...</option>
+                  </select>
+                </div>
+                <div class="session-controls">
+                  <button class="btn btn-primary btn-glow" id="dash-start-session-btn">
+                    <span class="material-icons-round">play_arrow</span>
+                    <span>Start Scanner Session</span>
+                  </button>
+                  <button class="btn btn-danger" id="dash-end-session-btn" style="display:none;">
+                    <span class="material-icons-round">stop</span>
+                    <span>End Active Session</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active feed summary / feed details -->
+          <div class="glass-card side-panel">
+            <div class="card-header">
+              <span class="material-icons-round">history</span>
+              <h3>Recent Attendees</h3>
+            </div>
+            <div class="card-body scrollable-body">
+              <div class="timeline" id="recent-scans-timeline">
+                <div class="timeline-empty">
+                  <span class="material-icons-round">visibility_off</span>
+                  <p>No scans recorded in this session yet.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: TEACHER MARK ATTENDANCE (CAMERA HUD) -->
+      <section class="tab-panel" id="tab-attendance">
+        <div class="scanner-grid">
+          <!-- Camera Viewport Card -->
+          <div class="glass-card scanner-card">
+            <div class="camera-viewport-header">
+              <div class="camera-title-badge">
+                <span class="pulse-indicator"></span>
+                <span>LIVE FEED — WEBGL GRAPHICS</span>
+              </div>
+              <div class="camera-hud-fps" id="camera-fps-counter">FPS: --</div>
+            </div>
+
+            <!-- Double-Layer Video/Canvas HUD container -->
+            <div class="camera-hud-container">
+              <div class="scan-laser-line" id="camera-laser"></div>
+              <video id="webcam-video" autoplay playsinline muted></video>
+              <canvas id="webcam-overlay"></canvas>
+              
+              <div class="hud-corner hud-tl"></div>
+              <div class="hud-corner hud-tr"></div>
+              <div class="hud-corner hud-bl"></div>
+              <div class="hud-corner hud-br"></div>
+              <div class="hud-center-reticle" id="hud-reticle">
+                <div class="reticle-outer"></div>
+                <div class="reticle-inner"></div>
+              </div>
+
+              <div class="camera-overlay-message" id="camera-message">
+                <span class="material-icons-round spin">sync</span>
+                <p>Initializing camera capture stream...</p>
+              </div>
+            </div>
+
+            <!-- Camera controls overlay -->
+            <div class="camera-controls">
+              <div class="control-toggles">
+                <label class="hud-switch">
+                  <input type="checkbox" id="toggle-autodetect" checked>
+                  <span class="switch-slider"></span>
+                  <span class="switch-label">Auto-Submit Attendance</span>
+                </label>
+                <label class="hud-switch">
+                  <input type="checkbox" id="toggle-landmarks" checked>
+                  <span class="switch-slider"></span>
+                  <span class="switch-label">Show TF.js Landmarks</span>
+                </label>
+              </div>
+              <button class="btn btn-cyan btn-glow" id="manual-snap-btn" disabled>
+                <span class="material-icons-round">photo_camera</span>
+                <span>Trigger Manual Capture</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Session status / Scan results pane -->
+          <div class="glass-card scanner-details-card">
+            <div class="card-header">
+              <span class="material-icons-round">sensors</span>
+              <h3>Active Session Scanner HUD</h3>
+            </div>
+            <div class="card-body">
+              <div class="active-session-indicator" id="scanner-session-info-card">
+                <span class="material-icons-round">info</span>
+                <div>
+                  <h4 id="scan-info-classroom">No Active Session</h4>
+                  <p id="scan-info-subject">Start a session from the Dashboard first</p>
+                </div>
+              </div>
+              <hr class="card-divider">
+              <div class="scan-result-visualizer" id="scan-result-panel">
+                <div class="result-placeholder">
+                  <span class="material-icons-round reticle-pulse">biotech</span>
+                  <h4>Ready for Scanning</h4>
+                  <p>Align a student's face inside the central camera HUD crosshair for automatic recognition.</p>
+                </div>
+              </div>
+              <hr class="card-divider">
+              <div class="count-badge-row">
+                <div class="badge-card">
+                  <span class="badge-title">Expected</span>
+                  <span class="badge-num" id="scan-count-expected">0</span>
+                </div>
+                <div class="badge-card">
+                  <span class="badge-title">Present</span>
+                  <span class="badge-num text-cyan" id="scan-count-present">0</span>
+                </div>
+                <div class="badge-card">
+                  <span class="badge-title">Session ID</span>
+                  <span class="badge-num" id="scan-count-id">--</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: TEACHER REGISTER STUDENT -->
+      <section class="tab-panel" id="tab-register">
+        <div class="registration-grid">
+          <div class="glass-card">
+            <div class="card-header">
+              <span class="material-icons-round">badge</span>
+              <h3>Student Personal Details</h3>
+            </div>
+            <div class="card-body">
+              <form id="student-reg-form">
+                <div class="form-group">
+                  <label for="reg-name">Full Legal Name</label>
+                  <input type="text" id="reg-name" class="form-input" placeholder="e.g. Ritanshu Choudhary" required>
+                </div>
+                <div class="form-group">
+                  <label for="reg-roll">Roll / Registration Number</label>
+                  <input type="text" id="reg-roll" class="form-input" placeholder="e.g. ROLL-2026-089" required>
+                </div>
+                <div class="form-group">
+                  <label for="reg-email">Email Address</label>
+                  <input type="email" id="reg-email" class="form-input" placeholder="e.g. student@university.edu" required>
+                </div>
+                <div class="form-group">
+                  <label for="reg-select-class">Assigned Class / Batch</label>
+                  <select id="reg-select-class" class="form-select" required>
+                    <option value="">Select Class...</option>
+                  </select>
+                </div>
+                <div class="registration-instructions">
+                  <h5><span class="material-icons-round">check_circle</span> Biometric Guidelines</h5>
+                  <ul>
+                    <li>Look directly into the camera on the right.</li>
+                    <li>Ensure adequate front lighting with no strong backlights.</li>
+                    <li>Avoid hats, large glasses, or facial obstructions.</li>
+                    <li>Keep a neutral facial expression while registering.</li>
+                  </ul>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Face Registration Camera HUD -->
+          <div class="glass-card registration-camera-card">
+            <div class="card-header">
+              <span class="material-icons-round">face_retouching_natural</span>
+              <h3>Biometric Face Scanner</h3>
+            </div>
+            <div class="card-body camera-column">
+              <div class="camera-hud-container reg-camera-hud">
+                <div class="scan-laser-line active" id="reg-camera-laser"></div>
+                <video id="reg-video" autoplay playsinline muted></video>
+                <canvas id="reg-overlay"></canvas>
+                
+                <div class="hud-corner hud-tl"></div>
+                <div class="hud-corner hud-tr"></div>
+                <div class="hud-corner hud-bl"></div>
+                <div class="hud-corner hud-br"></div>
+                <div class="hud-center-reticle" id="reg-hud-reticle">
+                  <div class="reticle-outer"></div>
+                  <div class="reticle-inner"></div>
+                </div>
+                <div class="camera-overlay-message" id="reg-camera-message">
+                  <span class="material-icons-round">videocam_off</span>
+                  <p>Start registering details to open scanner</p>
+                </div>
+              </div>
+              <div class="face-alignment-banner banner-yellow" id="reg-alignment-status">
+                <span class="material-icons-round">feedback</span>
+                <span>Camera Stream Idle</span>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-secondary" id="reg-start-cam-btn" type="button">
+                  <span class="material-icons-round">videocam</span>
+                  <span>Initialize Biometrics</span>
+                </button>
+                <button class="btn btn-cyan btn-glow" id="reg-submit-btn" type="button" disabled>
+                  <span class="material-icons-round">cloud_upload</span>
+                  <span>Register & Upload Face</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: TEACHER REPORTS -->
+      <section class="tab-panel" id="tab-reports">
+        <div class="glass-card report-control-card">
+          <div class="card-header">
+            <span class="material-icons-round">manage_search</span>
+            <h3>Search & Download Attendance History</h3>
+          </div>
+          <div class="card-body">
+            <div class="report-filters">
+              <div class="form-group select-narrow">
+                <label for="report-select-class">Classroom</label>
+                <select id="report-select-class" class="form-select">
+                  <option value="">Choose Class...</option>
+                </select>
+              </div>
+              <div class="form-group select-narrow">
+                <label for="report-select-session">Select Session ID / Date</label>
+                <select id="report-select-session" class="form-select" disabled>
+                  <option value="">Select Classroom first...</option>
+                </select>
+              </div>
+              <div class="report-filter-actions">
+                <button class="btn btn-primary" id="report-load-btn" disabled>
+                  <span class="material-icons-round">search</span>
+                  <span>Fetch Report</span>
+                </button>
+                <button class="btn btn-secondary" id="report-export-csv" disabled>
+                  <span class="material-icons-round">download</span>
+                  <span>Export CSV</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <br>
+        <div class="glass-card report-results-card">
+          <div class="card-header">
+            <span class="material-icons-round">list_alt</span>
+            <h3 id="report-sheet-title">Attendance Sheet Summary</h3>
+          </div>
+          <div class="card-body scrollable-body">
+            <div id="report-empty-state" class="table-empty-state">
+              <span class="material-icons-round">table_chart</span>
+              <h4>No Report Loaded</h4>
+              <p>Select a Classroom and a Session above, then click 'Fetch Report' to pull student sheets.</p>
+            </div>
+            <table class="hud-table" id="report-attendance-table" style="display:none;">
+              <thead>
+                <tr>
+                  <th>Roll No</th>
+                  <th>Student Name</th>
+                  <th>Status</th>
+                  <th>Marked Time</th>
+                  <th>Method</th>
+                </tr>
+              </thead>
+              <tbody id="report-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: STUDENT PORTAL HUB (SELF-SERVICE ATTENDANCE & BIOMETRIC STATS) -->
+      <section class="tab-panel" id="tab-student-hub">
+        <!-- Student Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon cyan-glow">
+              <span class="material-icons-round">analytics</span>
+            </div>
+            <div class="stat-data">
+              <h3>Attendance Ratio</h3>
+              <p class="stat-value" id="student-stat-ratio">0.0%</p>
+              <span class="stat-trend"><span class="trend-cyan" id="student-stat-ratio-label">Average Ratio</span></span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon green-glow">
+              <span class="material-icons-round">done_all</span>
+            </div>
+            <div class="stat-data">
+              <h3>Total Days Present</h3>
+              <p class="stat-value" id="student-stat-present">0</p>
+              <span class="stat-trend">Registered in class</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon red-glow">
+              <span class="material-icons-round">dangerous</span>
+            </div>
+            <div class="stat-data">
+              <h3>Total Absences</h3>
+              <p class="stat-value text-red" id="student-stat-absent">0</p>
+              <span class="stat-trend" id="student-stat-class">Unexcused status</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Student Self-Marking Split Layout -->
+        <div class="dashboard-layout">
+          <!-- Student self-marking camera viewport -->
+          <div class="glass-card main-panel student-selfmark-card">
+            <div class="camera-viewport-header">
+              <div class="camera-title-badge">
+                <span class="pulse-indicator"></span>
+                <span>SELF-MARKING PORTAL — FACE ID LOCK</span>
+              </div>
+              <div class="camera-hud-fps" id="student-fps-counter">FPS: --</div>
+            </div>
+
+            <!-- Double layer canvas HUD video -->
+            <div class="camera-hud-container student-camera-hud">
+              <div class="scan-laser-line" id="student-camera-laser"></div>
+              <video id="student-webcam-video" autoplay playsinline mirrored></video>
+              <canvas id="student-webcam-overlay"></canvas>
+              
+              <div class="hud-corner hud-tl"></div>
+              <div class="hud-corner hud-tr"></div>
+              <div class="hud-corner hud-bl"></div>
+              <div class="hud-corner hud-br"></div>
+              <div class="hud-center-reticle" id="student-hud-reticle">
+                <div class="reticle-outer"></div>
+                <div class="reticle-inner"></div>
+              </div>
+
+              <div class="camera-overlay-message" id="student-camera-message">
+                <span class="material-icons-round">videocam_off</span>
+                <p>Click 'Initialize Face ID' to self-mark</p>
+              </div>
+            </div>
+
+            <div class="camera-controls">
+              <button class="btn btn-secondary btn-block" id="student-start-cam-btn">
+                <span class="material-icons-round">videocam</span>
+                <span>Initialize Face ID</span>
+              </button>
+              <button class="btn btn-cyan btn-glow" id="student-snap-btn" disabled>
+                <span class="material-icons-round">verified</span>
+                <span>Mark Present</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Leave applications and past history log -->
+          <div class="sidebar-layout-container">
+            <!-- Submit Leave Application card -->
+            <div class="glass-card" style="margin-bottom:1.5rem;">
+              <div class="card-header">
+                <span class="material-icons-round">assignment_ind</span>
+                <h3>Submit Day Leave Request</h3>
+              </div>
+              <div class="card-body">
+                <p class="card-description">If you are unwell or absent with leave, submit a leave request today. No biometric scan is required.</p>
+                <button class="btn btn-secondary btn-block" id="student-leave-btn">
+                  <span class="material-icons-round">calendar_today</span>
+                  <span>Apply Day Leave</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Personal timeline -->
+            <div class="glass-card student-recent-scans">
+              <div class="card-header">
+                <span class="material-icons-round">history</span>
+                <h3>My Attendance History</h3>
+              </div>
+              <div class="card-body scrollable-body">
+                <div class="timeline" id="student-history-timeline">
+                  <div class="timeline-empty">
+                    <span class="material-icons-round">visibility_off</span>
+                    <p>No historical entries found.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: SHARED SYSTEM CONFIG -->
+      <section class="tab-panel" id="tab-config">
+        <div class="config-grid">
+          <!-- API Endpoints & Admin logins -->
+          <div class="glass-card">
+            <div class="card-header">
+              <span class="material-icons-round">dns</span>
+              <h3>FastAPI Server Parameters</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label for="cfg-api-url">Backend Server Gateway URL</label>
+                <div class="input-with-button">
+                  <input type="text" id="cfg-api-url" class="form-input" value="http://localhost:8000" placeholder="https://api.yourdomain.com">
+                  <button class="btn btn-cyan" id="cfg-save-url-btn">
+                    <span>Apply</span>
+                  </button>
+                </div>
+                <small class="form-help">Enter the root URL where your FastAPI service is deployed. Use <code>http://localhost:8000</code> for local servers.</small>
+              </div>
+              <hr class="card-divider">
+              <div class="auth-box-section">
+                <h4><span class="material-icons-round">key</span> Teacher / Admin Credentials</h4>
+                <p class="section-description">Admin bypass credentials. Authenticate manually to override JWT tokens.</p>
+                <div id="auth-logged-in-state" style="display:none;" class="auth-alert alert-success">
+                  <span class="material-icons-round">verified</span>
+                  <div>
+                    <h5>Successfully Authenticated</h5>
+                    <p id="auth-token-expiry">Token valid. Active role credentials active.</p>
+                  </div>
+                </div>
+                <div id="auth-logged-out-state" class="auth-form-card">
+                  <div class="form-group">
+                    <label for="cfg-admin-email">Email Address</label>
+                    <input type="email" id="cfg-admin-email" class="form-input" value="admin@facetrack.app">
+                  </div>
+                  <div class="form-group">
+                    <label for="cfg-admin-pass">Password</label>
+                    <input type="password" id="cfg-admin-pass" class="form-input" value="admin123">
+                  </div>
+                  <button class="btn btn-primary btn-glow" id="cfg-login-btn">
+                    <span class="material-icons-round">login</span>
+                    <span>Authenticate JWT Gateway</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TensorFlow model configurations -->
+          <div class="glass-card">
+            <div class="card-header">
+              <span class="material-icons-round">memory</span>
+              <h3>TF.js BlazeFace Configuration</h3>
+            </div>
+            <div class="card-body">
+              <div class="config-stat-list">
+                <div class="cfg-stat-item">
+                  <span class="cfg-stat-label">Model Resolution:</span>
+                  <span class="cfg-stat-val text-cyan">MobileNet Backbone (Lightweight)</span>
+                </div>
+                <div class="cfg-stat-item">
+                  <span class="cfg-stat-label">Maximum Faces Tracked:</span>
+                  <span class="cfg-stat-val">1 (Focus Capture)</span>
+                </div>
+                <div class="cfg-stat-item">
+                  <span class="cfg-stat-label">Subpixel Landmarking:</span>
+                  <span class="cfg-stat-val text-green">Active (6 Anchors)</span>
+                </div>
+                <div class="cfg-stat-item">
+                  <span class="cfg-stat-label">Hardware Acceleration:</span>
+                  <span class="cfg-stat-val text-cyan" id="cfg-webgl-status">WebGL Backend</span>
+                </div>
+              </div>
+              <hr class="card-divider">
+              <div class="seed-box-section">
+                <h4><span class="material-icons-round">database</span> Database Seeding Tools</h4>
+                <p class="section-description">Initialize base assets (Default Admin, Sample Classes 1 to 10) on the server.</p>
+                <button class="btn btn-secondary" id="cfg-seed-btn">
+                  <span class="material-icons-round">science</span>
+                  <span>Trigger Initial Data Seed</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Custom Alert Toast Popup -->
+  <div class="toast-notification" id="app-toast">
+    <span class="material-icons-round" id="toast-icon">info</span>
+    <span id="toast-message">Notification Triggered</span>
+  </div>
+
+  <!-- Application script logic -->
+  <script src="app.js" defer></script>
+</body>
+</html>

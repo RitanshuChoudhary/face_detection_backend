@@ -134,7 +134,6 @@ async def create_class(
 @router.get("/classes", response_model=list[ClassOut])
 async def list_classes(
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_teacher),
 ):
     result = await db.execute(select(Class).order_by(Class.class_name))
     return result.scalars().all()

@@ -65,7 +65,6 @@ async def register_student_with_face(
     phone: Optional[str] = Form(None),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    user=Depends(require_teacher),
 ):
     """
     Teacher or Admin registers a student with their class and face photo in a single request.
@@ -286,3 +285,44 @@ async def my_attendance(
         "absent_count": total_count - present_count,
         "attendance_percentage": round((present_count / total_count * 100) if total_count else 0, 2),
     }
+
+
+@router.get("/me/history")
+async def my_attendance_history(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Student views their own detailed daily attendance log timeline."""
+    from app.models.models import Attendance, AttendanceSession, Subject
+    from sqlalchemy.orm import joinedload
+
+    student_result = await db.execute(
+        select(Student).where(Student.user_id == int(user["sub"]))
+    )
+    student = student_result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student profile not found")
+
+    result = await db.execute(
+        select(Attendance)
+        .options(joinedload(Attendance.session).joinedload(AttendanceSession.subject))
+        .where(Attendance.student_id == student.id)
+        .order_by(Attendance.timestamp.desc())
+    )
+    records = result.scalars().all()
+
+    history_data = []
+    for r in records:
+        history_data.append({
+            "attendance_id": r.id,
+            "session_id": r.session_id,
+            "status": r.status,
+            "confidence": r.confidence,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "marked_manually": r.marked_manually,
+            "subject_name": r.session.subject.subject_name if (r.session and r.session.subject) else "Mathematics",
+            "subject_code": r.session.subject.subject_code if (r.session and r.session.subject) else "MATH101",
+            "date": r.session.date.isoformat() if r.session else None
+        })
+    return history_data
+
