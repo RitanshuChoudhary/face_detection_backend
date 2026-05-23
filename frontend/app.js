@@ -330,20 +330,22 @@ document.addEventListener('DOMContentLoaded', () => {
         <p>Initializing camera capture...</p>
       `;
       
-      signupStream = await startWebcam(signupVideo, (err) => {
-        signupCameraMessage.innerHTML = `
-          <span class="material-icons-round">videocam_off</span>
-          <p>Biometrics camera start failed.</p>
-        `;
-      });
+      signupStream = await startWebcam(
+        signupVideo,
+        () => {
+          startTrackingLoop(signupVideo, signupOverlay, 'signup');
+        },
+        (err) => {
+          signupCameraMessage.innerHTML = `
+            <span class="material-icons-round">videocam_off</span>
+            <p>Biometrics camera start failed.</p>
+          `;
+        }
+      );
 
       if (signupStream) {
         signupCameraMessage.style.opacity = '0';
         signupCameraLaser.classList.add('active');
-        
-        signupVideo.onloadedmetadata = () => {
-          startTrackingLoop(signupVideo, signupOverlay, 'signup');
-        };
       }
     });
 
@@ -863,7 +865,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ─── WEBCAM CAPTURING CORE FUNCTIONS ─────────────────────────
   
-  async function startWebcam(videoEl, errorCallback) {
+  async function startWebcam(videoEl, onLoadedCallback, errorCallback) {
     const constraints = {
       video: {
         width: { ideal: 640 },
@@ -874,11 +876,25 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     try {
+      if (onLoadedCallback) {
+        videoEl.onloadedmetadata = onLoadedCallback;
+      }
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       videoEl.srcObject = stream;
+      
+      try {
+        await videoEl.play();
+      } catch (playErr) {
+        console.warn("videoEl.play() was interrupted or failed:", playErr);
+      }
+      
+      if (videoEl.readyState >= 1 && onLoadedCallback) {
+        onLoadedCallback();
+      }
+      
       return stream;
     } catch (e) {
-      console.error(e);
+      console.error("Camera acquisition error:", e);
       if (errorCallback) errorCallback(e);
       return null;
     }
@@ -931,21 +947,23 @@ document.addEventListener('DOMContentLoaded', () => {
       <p>Initializing camera capture stream...</p>
     `;
     
-    attendanceStream = await startWebcam(webcamVideo, () => {
-      cameraMessage.innerHTML = `
-        <span class="material-icons-round">videocam_off</span>
-        <p>Camera hardware capture failed.</p>
-      `;
-    });
+    attendanceStream = await startWebcam(
+      webcamVideo,
+      () => {
+        startTrackingLoop(webcamVideo, webcamOverlay, 'attendance');
+      },
+      () => {
+        cameraMessage.innerHTML = `
+          <span class="material-icons-round">videocam_off</span>
+          <p>Camera hardware capture failed.</p>
+        `;
+      }
+    );
     
     if (attendanceStream) {
       cameraMessage.style.opacity = '0';
       cameraLaser.classList.add('active');
       manualSnapBtn.removeAttribute('disabled');
-      
-      webcamVideo.onloadedmetadata = () => {
-        startTrackingLoop(webcamVideo, webcamOverlay, 'attendance');
-      };
     }
   }
 
@@ -1317,20 +1335,22 @@ document.addEventListener('DOMContentLoaded', () => {
       <p>Starting capture stream...</p>
     `;
     
-    registrationStream = await startWebcam(regVideo, () => {
-      regCameraMessage.innerHTML = `
-        <span class="material-icons-round">videocam_off</span>
-        <p>Biometric camera initialization failed.</p>
-      `;
-    });
+    registrationStream = await startWebcam(
+      regVideo,
+      () => {
+        startTrackingLoop(regVideo, regOverlay, 'register');
+      },
+      () => {
+        regCameraMessage.innerHTML = `
+          <span class="material-icons-round">videocam_off</span>
+          <p>Biometric camera initialization failed.</p>
+        `;
+      }
+    );
     
     if (registrationStream) {
       regCameraMessage.style.opacity = '0';
       regCameraLaser.classList.add('active');
-      
-      regVideo.onloadedmetadata = () => {
-        startTrackingLoop(regVideo, regOverlay, 'register');
-      };
     }
   });
 
@@ -1652,20 +1672,22 @@ document.addEventListener('DOMContentLoaded', () => {
       <p>Opening scanner camera...</p>
     `;
     
-    studentStream = await startWebcam(studentWebcamVideo, () => {
-      studentCameraMessage.innerHTML = `
-        <span class="material-icons-round">videocam_off</span>
-        <p>Biometric webcam start failed.</p>
-      `;
-    });
+    studentStream = await startWebcam(
+      studentWebcamVideo,
+      () => {
+        startTrackingLoop(studentWebcamVideo, studentWebcamOverlay, 'student-hub');
+      },
+      () => {
+        studentCameraMessage.innerHTML = `
+          <span class="material-icons-round">videocam_off</span>
+          <p>Biometric webcam start failed.</p>
+        `;
+      }
+    );
 
     if (studentStream) {
       studentCameraMessage.style.opacity = '0';
       studentCameraLaser.classList.add('active');
-      
-      studentWebcamVideo.onloadedmetadata = () => {
-        startTrackingLoop(studentWebcamVideo, studentWebcamOverlay, 'student-hub');
-      };
     }
   });
 
