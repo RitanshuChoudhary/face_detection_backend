@@ -167,7 +167,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ─── SYSTEM STATE VARIABLES ──────────────────────────────────────────
   
-  let API_BASE_URL = localStorage.getItem('face_track_api_url') || 'http://localhost:8000';
+  // Migration fallback: if the old default local API is saved, clear it to adopt the live default
+  if (localStorage.getItem('face_track_api_url') === 'http://localhost:8000') {
+    localStorage.removeItem('face_track_api_url');
+  }
+
+  let API_BASE_URL = localStorage.getItem('face_track_api_url') || 'https://face-detection-backend-cxgl.onrender.com';
   let JWT_TOKEN = localStorage.getItem('face_track_jwt_token') || null;
   let USER_ROLE = localStorage.getItem('face_track_user_role') || null;
   
